@@ -1,0 +1,447 @@
+---
+title: 'Examples of EM algirhtm '
+output:
+  html_document:
+    df_print: paged
+---
+
+## Example 1, Guassian mixture
+
+$$X_i \sim \left\{ \begin{array}{ll}
+\textrm{N}(\mu_1, \sigma_1^2) & \textrm{with probability} \,\, 1-p, \\
+\textrm{N}(\mu_2, \sigma_2^2) & \textrm{with probability} \,\, p.
+\end{array} \right.$$
+The density of $X_i$ is thus
+$$f(x) = (1-p)f(x, \mu_1, \sigma_1) + p f(x, \mu_2, \sigma_2)$$
+where 
+$f(x, \mu_1, \sigma_1) = \frac{1}{\sigma}\phi((x-\mu_1)/\sigma_1)$ and 
+ $\phi(x)$ is the standard normal density:
+$$\phi(x) = \frac{1}{\sqrt{2\pi}} e^{-x^2/2}.$$
+Observed likelihood of $(x_1,...,x_n)$
+$$L_{obs}f(x) = \prod_{i=1}^n\left\{(1-p)f(x_i, \mu_1, \sigma_1) + p f(x_i, \mu_2, \sigma_2)\right\} $$
+Suppose there exist another sequence of iid
+Bernoullis: $Z_i \sim \textrm{Bin}(1,p)$.  For each $i$, if $Z_i=0$, then
+$X_i$ is from the N$(\mu_1, \sigma_1^2)$ distribution; if $Z_i=1$, then
+$X_i$ is from N$(\mu_2, \sigma_2^2)$. 
+The joint likelihood of $(x_i, z_i)$ is $ \{(1-p)f(x_i, \mu_1, \sigma_2)\}^{1-z_i}  \{pf(x_i, \mu_2, \sigma_2)\}^{z_i} $
+ 
+The complete log-likelihood of $(X_i, Z_i)'s$ is a linear function of $Z_i$'s
+\begin{eqnarray*}
+\ell( \mathbf{X}, \mathbf{Z}, \theta ) & =&  \sum_{i=1}^n \left\{Z_i \log p + (1-Z_i)\log(1-p)  
++ 
+Z_i \log f(x_i, \mu_2, \sigma_2) + (1-Z_i) \log f(x_i, \mu_1, \sigma_1)  \right\}
+\end{eqnarray*}
+where $\theta = (p, \mu_1, \mu_2,\sigma_1^2,\sigma_2^2)$.
+
+**E-step** $E_Z(\ell( \mathbf{X}, \mathbf{Z}, \theta ) \mid  \mathbf{X}, \theta^{(t)})$. Replacing $Z_i$ by $\delta_i^{(t)}$
+ \begin{eqnarray*}\label{expZ}
+{\delta_i^{(t)}\widehat{=}E[Z_i|x_i, \theta^{(t)}] = P(Z_i=1\mid x_i,  \theta^{(t)})}
+& =&
+\frac{p^{(t)}f(x_i, \mu_2^{(t)}, \sigma_2^{(t)})}
+{(1-p^{(t)})f(x_i, \mu_1^{(t)}, \sigma_1^{(t)}) + p^{(t)}f(x_i, \mu_2^{(t)}, \sigma_2^{(t)})}.
+\end{eqnarray*}
+
+**M-step** $\theta^{(t+1)} = \arg\max\ell( \mathbf{X}, \mathbf{\delta}^{(t)}, \theta )$. 
+\begin{eqnarray*}
+{p}^{(t+1)} &= &\sum \delta_i^{(t)}/n \\
+{\mu}_1^{(t+1)} &= & \frac{1}{\sum_{i=1}^n (1-\delta^{(t)}_i)} \sum_{i=1}^n (1-\delta^{(t)}_i) x_i;\\
+{\mu}_2^{(t+1)} &= & \frac{1}{\sum_{i=1}^n \delta^{(t)}_i} \sum_{i=1}^n \delta^{(t)}_i x_i;\\
+{\sigma}_1^{2(t+1)} &= & \frac{1}{\sum_{i=1}^n (1-\delta^{(t)}_i)}
+\sum_{i=1}^n \left[(1-\delta^{(t)}_i)(x_i-{\mu}_1^{(t+1)})^2\right].\\
+{\sigma}_2^{2(t+1)} &= & \frac{1}{\sum_{i=1}^n \delta^{(t)}_i}
+\sum_{i=1}^n \left[\delta^{(t)}_i(x_i-{\mu}^{(t+1)}_2)^2\right].
+\end{eqnarray*}
+
+
+```{r}
+# E-step evaluating conditional means E(Z_i | X_i , pars)
+delta <- function(X, pars){
+  phi1 <- dnorm(X, mean=pars$mu1, sd=pars$sigma1)
+  phi2 <- dnorm(X, mean=pars$mu2, sd=pars$sigma2)
+  return(pars$p * phi2 / ((1 - pars$p) * phi1 + pars$p * phi2))
+}
+
+# M-step - updating the parameters
+mles <- function(Z, X) {
+  n <- length(X)
+  phat <- sum(Z) / n
+  mu1hat <- sum((1 - Z) * X) / (n - sum(Z))
+  mu2hat <- sum(Z * X) / sum(Z)
+  sigmahat1 <- sqrt(sum((1 - Z) * (X - mu1hat)^2 ) / (n - sum(Z)))
+  sigmahat2 <- sqrt(sum(Z * (X - mu2hat)^2) / sum(Z))
+  return(list(p=phat, mu1=mu1hat, mu2=mu2hat, sigma1=sigmahat1,sigma2=sigmahat2))
+}
+EMmix <- function(X, start, nreps=10) {
+  i <- 0
+  Z <- delta(X, start)
+  newpars <- start
+  res <- c(0, t(as.matrix(newpars)))
+  while(i < nreps) {     
+  # This should actually check for convergence
+    i <- i + 1
+    newpars <- mles(Z, X)
+    Z <- delta(X, newpars)
+    res <- rbind(res, c(i, t(as.matrix(newpars))))
+  }
+  return(res)
+}
+
+```
+Waiting time between eruptions and the duration of the eruption for the Old Faithful geyser in Yellowstone National Park, Wyoming.(
+272 observations on 2 variables)
+
+*eruptions*	numeric	Eruption time in mins
+
+*waiting*	numeric	Waiting time to next eruption (in mins)
+
+```{r}
+library(datasets)
+data(faithful)
+head(faithful)
+hist(faithful$waiting)
+res=EMmix(faithful$waiting, start=list(p=0.5, mu1=50, mu2=80, sigma1=15, sigma2=15), nreps=20)
+res
+```
+
+
+ 
+## Example 2 Zero-inflated Poisson
+ 
+ 
+
+The following table shows the number of children of $N$ widows entitled to support from certain pension fund.
+
+
+```{r}
+library(knitr)
+n.child = c(0:6)
+n.widows = c(3062, 587, 284 ,103,33, 4 ,2 )
+xx= as.data.frame(rbind(n.child,n.widows))
+rownames(xx)=c("Number of Child", "Number of widows")
+kable (xx, caption="")  
+```
+
+Poisson distribution is often used to model count data. But the observed data above is not consistent with poison distribution due to the large number of windows without kids.  One way is to model the data as a mixture of two populations.  With probability $\delta$, $Y=0$, and with probability $1-\delta$, $Y\sim Poisson (\lambda)$. Construct an EM algorithm to estimate the $(\delta, \lambda)$, and implement into R.
+
+
+The observed likelihood of $Y_i$  is
+$$pI\{Y_i=0\}+(1-p) e^{-\lambda}\frac{\lambda^{Y_i}}{Y_i!}$$
+Let $z_i$ be the indicator whether $Y_i$ is from $0$ state or a Poission distribution
+
+$$\mathbf z_i\sim
+\begin{cases}
+1, \mbox{with probability}p \\
+0, \mbox{with probability }1-p\\
+\end{cases}
+$$
+The joint likelihood function is $$\prod_{i=1}^np^{z_i}\left[(1-p)e^{-\lambda}\frac{\lambda^{y_i}}{y_i!}\right]^{1-z_i}$$
+
+The joint log-likehood is 
+$$\sum_{i=1}^nz_i\log p +(1-z_i)\left[\log (1-p) -\lambda+y_i\log(\lambda)-\log(y_i!)\right]$$
+
+E-step: $$\widehat z_i^{(t)} = E(z_i|Y_i)= P(z_i=1|Y_i) = \begin{cases}
+\frac{\widehat p^{(t)}}{\widehat p^{(t)}+(1-\widehat p^{(t)})e^{-\widehat\lambda^{(t)}}}, Y_i=0 \\
+0, Y_i>0\\
+\end{cases}$$
+M-step: $$\widehat p^{(t+1)}=\frac{\sum_i \widehat z_i^{(t)}}{n}$$
+and $$\widehat\lambda^{(t+1)} =\frac{\sum_i Y_i (1- \widehat z_i^{(t)})}{\sum_i \widehat z_i^{(t)}}$$
+
+
+
+
+
+```{r}
+Y <- c(rep(0,3062),rep(1,587),rep(2,284),rep(3,103),rep(4,33),rep(5,4),rep(6,2))
+n <- length(Y)
+Q <- function(Y,delta,lambda){
+mid <- NULL
+for (ii in 1:n){
+if (Y[[ii]] == 0) mid[[ii]] <- delta / (delta + (1-delta)*exp(-lambda))
+else mid[[ii]] <- 0
+}
+return(mid)
+}
+
+mles <- function(Y,Z){
+delta <- sum(Z)/n
+lambda <- sum(Y*(1-Z))/(n-sum(Z))
+return(c(delta,lambda))
+}
+EMmix <- function(Y, delta, lambda, nreps=20) {
+i <- 0
+Z <- Q(Y, delta, lambda)
+18
+res <- c(0, delta, lambda)
+while(i < nreps) {
+i <- i + 1
+para <- mles(Y,Z)
+Z <- Q(Y, para[1], para[2])
+res <- rbind(res, c(i,para[1],para[2]))
+}
+return(res)
+}
+delta <- 0.2
+lambda <- 5
+EMmix(Y, delta, lambda)
+
+```
+
+
+## Example 3 Lifetime data are often modeled as having an exponential distribution
+
+$$f(y;\theta) = \frac{1}{\theta} e^{-y/\theta}, \,\, y \ge 0.$$
+  Suppose it is of interest to
+estimate the mean lifetime $\theta$ of a population of lightbulbs.
+A first experiment is performed, giving data $X_1, \ldots, X_m$
+of lifetimes.  A second experiment of $n$ bulbs is performed but in it, all bulbs are observed only
+once, at some fixed time $t$.
+For the second experiment, let $E_i$ be the indicator function for the $i$th bulb, i.e., $E_i=1$ if the $i$th bulb was still burning at time $t$, otherwise
+$E_i=0$.
+
+The observed data from both experiments is thus $(X_1, \ldots, X_m, E_1, \ldots, E_n)$ and the
+unobserved data is $Y_1, \ldots, Y_n$, the actual lifetimes of the bulbs in the second experiment.
+The log-likelihood function for the complete data is
+\begin{equation}\label{loglik}
+\log L(\theta; \mathbf{X}, \mathbf{Y}) = -m\left(\log \theta + \bar{X}/\theta\right) - \sum_{i=1}^n \left( \log \theta +
+Y_i/ \theta\right).
+\end{equation}
+
+The expected value of $Y_i$ still given the observed data at time $t$ is
+\begin{equation}\label{EYi}
+\textrm{E}[Y_i | X_1, \ldots, X_m, E_1, \ldots, E_n] = \textrm{E}[Y_i|E_i] = \left\{
+\begin{array}{ll}
+\theta - \frac{te^{-t/\theta}}{1-e^{-t/\theta}}, & E_i=0 \\
+t+\theta, & E_i=1.
+\end{array} \right.
+\end{equation}
+
+Write the specific algorithm  to obtain the maximum likelihood estimator for $\theta$ using the EM algorithm, and write an R function to execute your algorithm. 
+
+\vskip 10pt 
+
+The following data is collected from one of such experiments where $n=m=20$ and $t=8$
+
+$$\mathbf{Y} = (4.0, 12.8, 2.9, 27.2, 2.9, 3.1, 11.2, 9.0, 8.1, 9.8, 13.7, 8.3, 1.2, 0.9, 8.0, 18.8, 2.6, 22.6, 1.7, 4.0)$$
+$$\mathbf{E}=(1,  0,  0,  0 , 0 , 1,  1,  1,  1,  1,  1,  1, 1, 1, 0, 0, 1, 0, 1, 0)$$
+Please apply your algorithm to this data, and present your results.
+
+
+
+```{r}
+# E-step evaluating conditional means E(Zi|Xi)
+delta <- function(E, theta)
+{  t=8
+  Ey0 <- theta-t*exp(-t/theta)/(1-exp(-t/theta))
+  Ey1 <- t+theta
+  return ((E==0)*Ey0+(E==1)*Ey1)
+}
+# M-step updating the parameters
+mles <- function(delta, X, E)
+{
+  m=length(X)
+  n=length(E)
+  thetahat <- 1/(m+n)*(sum(X)+sum(delta))
+  return(thetahat)
+}
+Emix <- function(X, E, start, nreps=10)
+{
+  i=0
+  Z=delta(E,start)
+  newpars <- start
+  res <- c(0,t(as.matrix(newpars)))
+  error <- 1
+  while(i < nreps & error > 1e-5) # should check for convergence
+  {
+i <- i+1
+1
+oldpars <- newpars
+    newpars <- mles(Z,X,E)
+    error <- abs(newpars-oldpars)
+    Z <- delta(E,newpars)
+    res <- rbind(res,c(i, t(as.matrix(newpars))))
+}
+  return(res)
+}
+# given data
+n=20;m=20;t=8
+X <- c(4.0, 12.8, 2.9, 27.2, 2.9, 3.1, 11.2, 9.0, 8.1, 9.8, 13.7, 8.3, 1.2, 0.9, 8.0, 18.8, 2.6, 22.6, 1.7, 4.0)
+E <- c(1,0,0,0,0,1,1,1,1,1,1,1,1,1,0,0,1,0,1,0)
+Emix (X, E, start=1, nreps=50)
+```
+
+## Example 4 The Fisher's genotype example
+
+
+A two linked bi-allelic loci, A and B, with alleles A and a, and B and b, respectively.  A is dominant over a and B is dominant over b. Since the two loci are linked,  types AB and ab will appear with the same frequency $(1-r)/2$, and types Ab and aB will appear with the same frequency $r/2$. So a genotype AABB will have the frequency $(1-r)(1-r)/4$ and a genotype AaBB will have the frequency $r(1-r)/4$... 
+
+Due to the dominate feature, there are 4 classes of phenotypes, A*B*, A*bb, aaB* and aabb. Let $\psi = (1-r)(1-r)$, one can derive that the joint distribution of the 4 phenotypes $\mathbf{y} = \{y_1,y_2,y_3,y_4\}$ from a random sample with $n$ subject is multinomial 
+$$\mbox{Multinomial} [ n, \frac{2+\psi}{4}, \frac{1-\psi}{4}, \frac{1-\psi}{4} ,\frac{\psi}{4} ]$$
+Question -- How to estimate $\psi$?
+
+\newslide
+\paragraph{MLE}
+$$L(\mathbf{y}, \psi) = \frac{n!}{y_1!y_2!y_3!y_4!} (1/2+\psi/4)^{y_1}(1/4 - \psi/4)^{(y_2+y_3)} (\psi/4)^{y_4}$$
+$$\log L(\mathbf{y}, \psi) = y_1\log(2+\psi) + (y_2+y_3) \log(1-\psi) + y_4 \log(\psi)$$
+$$\frac{\partial L(\mathbf{y}, \psi)}{\partial \psi} =\frac{y_1}{2+\psi}+\frac{y_2+y_3}{1-\psi} +\frac{4}{\psi} $$
+ 
+Suppose $y_1 = y_{11} + y_{12}$, where $y_{11} \sim B(n, 1/2)$ and $y_{12} \sim B(n, \psi/4)$. Then the complete log likelihood of  $\{y_{11},y_{12},y_2,y_3,y_4\}$ is 
+ $$\log L_c(\psi) = (y_{12} + y_4) \log(\psi) + (y_2+y_3)\log(1-\psi) $$
+ 
+ 
+ In the $t$-th $E$ step, we need to estimate $E[y_{12}| \mathbf{y},\psi^{(t)} ]$. Since 
+ $$y_{11} \sim B(y_1, \frac{0.5}{0.5+\psi^{(t)}/4})$$
+ $$y_{12}^{(t)} = E[y_{12}| \mathbf{y},\psi^{(t)} ] = y_1 - \frac{0.5y_1}{0.5+\psi^{(t)}/4}$$
+ 
+ In the $M$ step, we need to maximize $(y_{12}^{(t)} + y_4) \log(\psi) + (y_2+y_3)\log(1-\psi)$, which is equivalent to solve the following simple linear function
+ $$\frac{y_{12}^{(t)} + y_4}{\psi} - \frac{y_2+y_3}{1-\psi} = 0$$
+ 
+ $$\psi^{(t)} =\frac{y_{12}^{(t)}+y_4}{y_{12}^{(t)} + y_2+y_3+y_4} = \frac{y_{12}^{(t)}+y_4}{n-y_{11}^{(t)}}$$
+
+*Question*: When $\mathbf{y} = (125, 18, 20, 34)$, what is $\psi$?
+ 
+ \vskip 15pt
+ 
+ 
+## Example 5 ABO blood type 
+ 
+Consider the ABO blood type data, where you have $N_{obs} = (N_{A},N_{B},N_{AB}, N_{O}) = (26, 27, 42, 7)$.
+
+* Design an EM algorithm to estimate the allele frequencies, $P_A, P_B$ and $P_O$; and}
+
+The relationship between phenotype and genotype in ABO blood type data is determined by the following table.
+
+---------------------------------------
+Bloodtype  A  | B |  AB |   O \\
+Genotype   A/A, A/O |   B/B, B/O |  A/B | O/O \\
+---------------------------------------
+
+
+While complete data for this case would be the number of people with each genotype, denoted by $N=(N_{A/A}, N_{A/O}, N_{B/B}, N_{B/O}, N_{A/B}, N_{O/O})$, we only observed the number of people with each phenotype, say $N_{\text{obs}} = (N_{A}, N_{B}, N_{AB}, N_{O})$.
+
+Note that the goal is to estimate the frequencies of alleles A, B, and O, denoted by $p_A$, $p_B$, and $p_O$, respectively. According to the Hardy-Weinberg law, the genotype frequencies are
+
+$$\mbox{Prob} (\mbox{Genotype} = A/A) = p_A^2$$
+$$\mbox{Prob} (\mbox{Genotype} = A/O) = 2p_A p_O$$
+$$\mbox{Prob} (\mbox{Genotype} = B/B ) = p_B^2$$
+$$\mbox{Prob} (\mbox{Genotype} = B/O) = 2p_B p_O$$
+$$\mbox{Prob} (\mbox{Genotype} = A/B) = 2p_A p_B$$
+$$\mbox{Prob} (\mbox{Genotype} =  O/O ) = p_O^2$$
+
+
+Furthermore, genotype counts $N=(N_{A/A}, N_{A/O}, N_{B/B}, N_{B/O}, N_{A/B}, N_{O/O})$ are jointly multinomially distributed with log-likelihood function as shown below.
+\begin{eqnarray*}
+\log L(p | N) &=& N_{A/A} \log(p_A^2) + N_{A/O} \log (2 p_A p_O) + N_{B/B} \log(p_B^2) +  N_{B/O} \log(2 p_B p_O) \\
+&+& N_{A/B} \log(2 p_A p_B) + N_{O/O} \log(p_O^2) \\
+&+& \log \Bigl(\frac{n!}{N_{A/A}! N_{A/O}! N_{B/B}! N_{B/O}! N_{A/B}! N_{O/O}!}\Bigr)
+\end{eqnarray*}
+where $n=N_{A/A} + N_{A/O} + N_{B/B} + N_{B/O} + N_{A/B} + N_{O/O}$.
+
+
+** E-step **
+
+Note $N_{A/A} + N_{A/O} = N_A$ and $N_{B/B} + N_{B/O} = N_B$. Thus the conditional distribution of $N_{A/A}|N_A$ and $N_{B/B}|N_B$  are
+$$
+N_{A/A}|N_A \sim \text{Bin}\Biggl( N_A, \frac{p_A^2}{p_A^2 + 2 p_A p_O} \Biggr)
+$$
+and 
+$$
+ \,\,\, N_{B/B}|N_B \sim \text{Bin}\Biggl( N_B, \frac{p_B^2}{p_B^2 + 2 p_B p_O} \Biggr)
+$$
+respectively.
+
+Therefore, the expectations in the $k$-th iteration can be easily calculated as follows.
+$$
+N_{A/A}^{(k)} = E(N_{A/A}|N_{\text{obs}}, p^{(k)}) = N_A \times \frac{{p_A^{(k)}}^2}{{p_A^{(k)}}^2 + 2 p_A^{(k)} p_O^{(k)}}
+$$
+$$
+N_{A/O}^{(k)} = E(N_{A/O}|N_{\text{obs}}, p^{(k)}) = N_A \times \frac{2 p_A^{(k)} p_O^{(k)}}{{p_A^{(k)}}^2 + 2 p_A^{(k)} p_O^{(k)}}
+$$
+$$
+N_{B/B}^{(k)} = E(N_{B/B}|N_{\text{obs}}, p^{(k)}) = N_B \times \frac{{p_B^{(k)}}^2}{{p_B^{(k)}}^2 + 2 p_B^{(k)} p_O^{(k)}}
+$$
+$$
+N_{B/O}^{(k)} = E(N_{B/O}|N_{\text{obs}}, p^{(k)}) = N_B \times \frac{2 p_B^{(k)} p_O^{(k)}}{{p_B^{(k)}}^2 + 2 p_B^{(k)} p_O^{(k)}}.
+$$
+
+Moreover, it is obvious that 
+$$
+E(N_{A/B}|N_{\text{obs}}, p^{(k)}) = N_{A/B}
+$$ 
+and 
+$$ 
+E(N_{O/O}|N_{\text{obs}}, p^{(k)}) = N_{O/O}.
+$$
+
+**M-step**
+
+Now consider maximizing $Q(p|p^{(k)})$ under the restriction $p_A+p_B+p_O=1$. Introduce Lagrange multiplier $\lambda$ and maximize
+$$Q_L(p, \lambda|p^{(k)})=Q(p|p^{(k)})+\lambda(p_A+p_B+p_O-1)$$
+with respect to $p=(p_A, p_B, p_O)$ and $\lambda$.\\
+\begin{eqnarray}
+\frac{\partial Q_L(p, \lambda|p^{(k)})}{\partial p_A}
+&=&\frac{2N_{A/A}^{(k)}}{p_A}+\frac{N_{A/O}^{(k)}}{p_A}+\frac{N_{A/B}^{(k)}}{p_A}+\lambda\\
+\frac{\partial Q_L(p, \lambda|p^{(k)})}{\partial p_B}
+&=&\frac{2N_{B/B}^{(k)}}{p_B}+\frac{N_{B/O}^{(k)}}{p_B}+\frac{N_{A/B}^{(k)}}{p_B}+\lambda\\
+\frac{\partial Q_L(p, \lambda|p^{(k)})}{\partial p_O}
+&=&\frac{N_{A/O}^{(k)}}{p_O}+\frac{N_{B/O}^{(k)}}{p_O}+\frac{2N_{O/O}^{(k)}}{p_O}+\lambda\\
+\frac{\partial Q_L(p, \lambda|p^{(k)})}{\partial p_\lambda}&=&p_A+p_B+p_C-1
+\end{eqnarray}
+
+Since $N_{A/A}^{(k)}+N_{A/O}^{(k)}+N_{B/B}^{(k)}+N_{B/O}^{(k)}+N_{A/B}^{(k)}+N_{O/O}^{(k)}=n$, from the above four functions, we get $\lambda=-2n$. By plugging  $\lambda=-2n$ in and setting (1), (2), and (3) to be zero, update $(p_A, p_B, p_O)$ as follows.
+$$p_A^{(k+1)}=\frac{2N_{A/A}^{(k)}+N_{A/O}^{(k)}+N_{A/B}^{(k)}}{2n}$$
+$$p_B^{(k+1)}=\frac{2N_{B/B}^{(k)}+N_{B/O}^{(k)}+N_{A/B}^{(k)}}{2n}$$
+$$p_O^{(k+1)}=\frac{2N_{O/O}^{(k)}+N_{A/O}^{(k)}+N_{B/O}^{(k)}}{2n}$$
+
+Repeat E-step and M-step until convergence.
+
+
+
+<!-- ## Example 4  missing data  -->
+
+<!-- The data consist of 289 male adults between 25 and 45 years old, who participated the National Health and Nutrition Examination Survey (NHANES) in 2005-2006. Their Daily nutrition intakes were recorded, in addition to various body size measures. Since the waist circumference is known to be highly associated with the risk of cardiovascular diseases, it is of interest to understand how daily fat intake is related to waist circumference. Let $Y_i$ be the waist circunference of the $i$th participant, $X_i$ is his total fat intake and  $Z_i$ is his age.  The following model is considered:  -->
+<!--     $$\mbox{E(Y_i \mid X_i, Z_i)}=\beta_0+\beta_1X_i +\beta_2Z_i, \quad \mbox{Var}(Y_i \mid X_i, Z_i) = \sigma^2$$ -->
+
+
+<!--     * Fit the full data with the model above, and report your findings. -->
+
+<!-- ```{r} -->
+<!-- dat = read.csv( "/Users/yingwei/Dropbox/Teaching/Teaching-computing/My Teaching Files/nhanes.csv") -->
+<!-- head(dat) -->
+<!-- summary(lm(BMXWAIST~totalfat+factor(agegroup), data=dat)) -->
+```
+   
+
+<!-- * Assume that some overweight respondents are reluctant to report their daily intakes. We assume  that those subjects whose waist circumferences are larger than 90 inches (the median) do not report their totalfat intake values with probability 0.4. Write a function to implement this missing mechanism,  randomly remove 20\% observations accordingly, and treat them as missing data. -->
+
+<!-- ```{r} -->
+<!-- set.seed(1123455) -->
+<!-- m = rep(1, nrow(dat)) -->
+<!-- m[which(dat$BMXWAIST>90)] =sample(c(0,1), sum(dat$BMXWAIST>90), replace=T, prob=c(0.4,0.6)) -->
+<!-- mean(m) -->
+<!-- ``` -->
+
+<!-- * Re-estimate the model using the remaining 80\% ``completely observed'' data, and compare the results with the fitted model using full records. -->
+<!-- ```{r} -->
+<!-- summary(lm(BMXWAIST~totalfat+factor(agegroup), data=dat, subset = m==1)) -->
+<!-- ``` -->
+
+
+<!-- Ignoring the ``missing'' data, the effect of total fat intake is under-estimated.  -->
+
+
+<!-- **Question** Why and when ignoring the ``missing'' data will introduce bias into the estimation?  -->
+
+<!-- **Answer** When the missingness depends on the outcome $Y$ even after conditioning on other covariates. To see this, we can write the objective function of the completely observed data. -->
+<!-- $$\widehat\beta = \arg\min_\boldsymbol \beta \sum_{i=1}^n \delta_i(y_i-\beta_0-\beta_1x_i +\beta_2z_i)^2$$ -->
+<!-- The estimates $\widehat\beta$ converges to the minimizer of $E_{y_i}\left\{\delta_i(y_i-\beta_0-\beta_1x_i +\beta_2z_i)^2\mid x_i, z_i \right\}$. When $\delta_i$ and $y_i$ are independent conditioning on $(x_i, z_i)$, we have $E_{y_i}\left\{\delta_i(y_i-\beta_0-\beta_1x_i +\beta_2z_i)^2\mid x_i, z_i \right\} =E(\delta_i\mid x_i, z_i) E_{y_i}\left\{(y_i-\beta_0-\beta_1x_i +\beta_2z_i)^2\mid x_i, z_i \right\}$. In other words, minimizing $E_{y_i}\left\{\delta_i(y_i-\beta_0-\beta_1x_i +\beta_2z_i)^2\mid x_i, z_i \right\}$ is equivalant to minimize $E_{y_i}\left\{(y_i-\beta_0-\beta_1x_i +\beta_2z_i)^2\mid x_i, z_i \right\}$. The true $\boldsymbol \beta$ is the minimizer of the latter objective function. -->
+
+
+<!-- * Write and implement an EM-algorithm to re-estimate the model,  and compare  the results with the fitted model using full records. -->
+
+
+
+<!-- **  Suppose $(Y_i, X_i, Z_i, \delta_i)$, $i=1,...,n_1$, is the subset of the ``completely`` observed data, and $(Y_j, X_j, Z_j)$, $i=n_1+1,...,n$ is the subset with missing  $X_j$. Assuming that  $Y_i$ follows normal distribution, the complete likelihood is $f(Y,X,Z,\delta) = f(Y, X, Z) f(\delta|Y, X, Z) = f(Y|X, Z,\delta, \boldsymbol \beta, \sigma^2)f(X,Z, \theta)f(\delta|Y)$  -->
+
+<!-- $$\ell(\boldsymbol{\beta}, \theta) = \sum_{i=1}^{n_1} f(Y_i, X_i, Z_i, \boldsymbol\beta, \sigma) +\sum_{j=n_1+1}^{n}f(Y_j, X_j, Z_j, \boldsymbol\beta, \sigma) +\sum_{i=1}^{n_1}f(X_i,Z_i, \theta)+\sum_{j=n_1+1}^{n}f(X_j,Z_j, \theta)$$ -->
+
+<!-- ** E-step: take expectation of $\ell(\boldsymbol \beta)$ over the conditional distribution of $X|Y,Z$. Assuming multivariate normal distribtion, $f(X|Y,Z) = f(X, Y |Z)/f(Y|Z) = f(Y|X, Z; \boldsymbol \beta, \sigma^2)f(X|Z, \theta)/f(Y|Z)$ -->
